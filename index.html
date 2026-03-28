@@ -66,6 +66,22 @@
                     <input type="url" id="entry-link" placeholder="https://...">
                 </div>
                 <div class="form-group">
+                    <label>📷 캡쳐 이미지로 자동 입력</label>
+                    <div class="ocr-drop" id="ocr-drop">
+                        <input type="file" id="ocr-input" accept="image/*">
+                        <div class="ocr-drop-inner">
+                            <span class="ocr-icon">📸</span>
+                            <span class="ocr-hint-text">이미지 선택 · 드래그 앤 드롭</span>
+                            <span class="ocr-hint-sub">스크린샷을 올리면 문장·단어 자동 분류</span>
+                        </div>
+                    </div>
+                    <div class="ocr-status" id="ocr-status" style="display:none">
+                        <div class="ocr-progress-bar"><div id="ocr-bar"></div></div>
+                        <span id="ocr-status-text">인식 중...</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label>공부한 문장</label>
                     <textarea id="entry-sentences" rows="5" placeholder="공부한 문장을 복사해서 붙여넣기 하세요..."></textarea>
                 </div>
