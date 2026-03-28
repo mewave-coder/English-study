@@ -167,131 +167,210 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
 });
 
-/* ── OCR ── */
-function setupOCR() {
-    const drop = document.getElementById('ocr-drop');
-    const input = document.getElementById('ocr-input');
+/* ── Notion 연동 ── */
+const NOTION_PROXY = 'https://corsproxy.io/?';
 
-    input.addEventListener('change', () => {
-        if (input.files[0]) runOCR(input.files[0]);
+function setupNotion() {
+    // 설정 모달
+    document.getElementById('notion-setup-open').addEventListener('click', openNotionSetup);
+    document.getElementById('notion-setup-close').addEventListener('click', closeNotionSetup);
+    document.getElementById('notion-setup-cancel').addEventListener('click', closeNotionSetup);
+    document.getElementById('notion-setup-overlay').addEventListener('click', e => {
+        if (e.target.id === 'notion-setup-overlay') closeNotionSetup();
     });
-    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
-    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-    drop.addEventListener('drop', e => {
-        e.preventDefault();
-        drop.classList.remove('drag');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) runOCR(file);
+    document.getElementById('notion-token-save').addEventListener('click', saveNotionToken);
+
+    // 가져오기 버튼
+    document.getElementById('notion-fetch-btn').addEventListener('click', handleNotionFetch);
+    document.getElementById('notion-url').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); handleNotionFetch(); }
     });
+
+    // 저장된 토큰 표시
+    const saved = localStorage.getItem('notion_token');
+    if (saved) document.getElementById('notion-token-input').value = saved;
 }
 
-async function runOCR(file) {
-    const status  = document.getElementById('ocr-status');
-    const bar     = document.getElementById('ocr-bar');
-    const txt     = document.getElementById('ocr-status-text');
-    const drop    = document.getElementById('ocr-drop');
+function openNotionSetup() {
+    const saved = localStorage.getItem('notion_token');
+    if (saved) document.getElementById('notion-token-input').value = saved;
+    document.getElementById('notion-setup-overlay').classList.add('open');
+}
 
-    // 이미지 썸네일
-    const existing = drop.querySelector('.ocr-thumb');
-    if (existing) existing.remove();
-    const img = document.createElement('img');
-    img.className = 'ocr-thumb';
-    img.src = URL.createObjectURL(file);
-    drop.appendChild(img);
+function closeNotionSetup() {
+    document.getElementById('notion-setup-overlay').classList.remove('open');
+}
 
-    status.style.display = 'block';
-    bar.style.width = '0%';
-    txt.textContent = 'Tesseract.js 로딩 중...';
+function saveNotionToken() {
+    const token = document.getElementById('notion-token-input').value.trim();
+    if (!token) { showToast('토큰을 입력해주세요.', 'error'); return; }
+    localStorage.setItem('notion_token', token);
+    closeNotionSetup();
+    showToast('Notion API 토큰이 저장되었습니다.', 'success');
+}
+
+async function handleNotionFetch() {
+    const url   = document.getElementById('notion-url').value.trim();
+    const token = localStorage.getItem('notion_token');
+    const statusEl = document.getElementById('notion-fetch-status');
+
+    if (!url) { setNotionStatus('Notion 페이지 URL을 입력해주세요.', 'error'); return; }
+
+    if (!token) {
+        setNotionStatus('먼저 Notion API 토큰을 설정해주세요.', 'error');
+        setTimeout(openNotionSetup, 600);
+        return;
+    }
+
+    const pageId = extractNotionPageId(url);
+    if (!pageId) { setNotionStatus('유효한 Notion URL이 아닙니다.', 'error'); return; }
+
+    const btn = document.getElementById('notion-fetch-btn');
+    btn.disabled = true;
+    btn.textContent = '불러오는 중...';
+    setNotionStatus('Notion 페이지 불러오는 중...', '');
 
     try {
-        if (!window.Tesseract) {
-            await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+        const { sentences, words, title } = await fetchNotionBlocks(pageId, token);
+
+        if (title && !document.getElementById('entry-title').value) {
+            document.getElementById('entry-title').value = title;
+        }
+        if (sentences) {
+            const f = document.getElementById('entry-sentences');
+            f.value = f.value ? f.value + '\n' + sentences : sentences;
+        }
+        if (words) {
+            const f = document.getElementById('entry-words');
+            f.value = f.value ? f.value + '\n' + words : words;
         }
 
-        txt.textContent = '텍스트 인식 중...';
-
-        const worker = await Tesseract.createWorker(['eng', 'kor'], 1, {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    const pct = Math.round(m.progress * 100);
-                    bar.style.width = pct + '%';
-                    txt.textContent = `인식 중... ${pct}%`;
-                }
-            }
-        });
-
-        const { data: { text } } = await worker.recognize(file);
-        await worker.terminate();
-
-        bar.style.width = '100%';
-        txt.textContent = '완료!';
-        setTimeout(() => { status.style.display = 'none'; }, 1200);
-
-        classifyAndFill(text.trim());
+        const sentCount = sentences.split('\n').filter(Boolean).length;
+        const wordCount = words.split('\n').filter(Boolean).length;
+        setNotionStatus(`✅ 문장 ${sentCount}줄, 단어 ${wordCount}줄 가져옴`, 'success');
+        showToast('Notion에서 내용을 가져왔습니다!', 'success');
 
     } catch (err) {
-        txt.textContent = '오류: ' + err.message;
-        bar.style.width = '0%';
+        setNotionStatus('오류: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '가져오기';
     }
 }
 
-function classifyAndFill(rawText) {
-    if (!rawText) { showToast('텍스트를 인식하지 못했습니다.', 'error'); return; }
+function setNotionStatus(msg, type) {
+    const el = document.getElementById('notion-fetch-status');
+    el.textContent = msg;
+    el.className = type;
+}
 
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 1);
-    const sentences = [];
-    const words = [];
+function extractNotionPageId(url) {
+    // UUID 형태 (32자 hex 또는 8-4-4-4-12 형태)
+    const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+    if (uuidMatch) return uuidMatch[0];
 
-    const hasKorean = s => /[\uAC00-\uD7AF]/.test(s);
-    const hasEnglish = s => /[a-zA-Z]/.test(s);
-    const wordCount = s => s.split(/\s+/).length;
+    const hexMatch = url.match(/([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
+    if (hexMatch) {
+        const h = hexMatch[1];
+        return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+    }
+    return null;
+}
 
-    for (const line of lines) {
-        const kor = hasKorean(line);
-        const eng = hasEnglish(line);
+async function fetchNotionBlocks(pageId, token) {
+    // 1. 페이지 제목 가져오기
+    const pageApiUrl = `https://api.notion.com/v1/pages/${pageId}`;
+    const pageRes = await fetch(NOTION_PROXY + encodeURIComponent(pageApiUrl), {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Notion-Version': '2022-06-28',
+        }
+    });
+    if (!pageRes.ok) {
+        const e = await pageRes.json().catch(() => ({}));
+        throw new Error(e.message || `HTTP ${pageRes.status} — 페이지 접근 권한을 확인해주세요`);
+    }
+    const pageData = await pageRes.json();
+    const title = extractPageTitle(pageData);
 
-        if (eng && kor) {
-            // 영어+한글 혼합 → 단어-뜻 형태
-            words.push(line);
-        } else if (eng && !kor && wordCount(line) >= 4) {
-            // 영어 문장
-            sentences.push(line);
-        } else if (eng && !kor && wordCount(line) < 4) {
-            // 짧은 영어 → 단어
-            words.push(line);
-        } else if (kor) {
-            // 한글만 → 문장 번역으로 추가
-            sentences.push(line);
+    // 2. 블록 목록 가져오기
+    const blocksApiUrl = `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`;
+    const blocksRes = await fetch(NOTION_PROXY + encodeURIComponent(blocksApiUrl), {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Notion-Version': '2022-06-28',
+        }
+    });
+    if (!blocksRes.ok) throw new Error(`블록 불러오기 실패 HTTP ${blocksRes.status}`);
+    const blocksData = await blocksRes.json();
+
+    const { sentences, words } = parseNotionBlocks(blocksData.results || []);
+    return { title, sentences, words };
+}
+
+function extractPageTitle(pageData) {
+    try {
+        const props = pageData.properties;
+        for (const key of ['title', 'Title', 'Name', 'name']) {
+            if (props[key]?.title) {
+                return props[key].title.map(t => t.plain_text).join('').trim();
+            }
+        }
+        const firstProp = Object.values(props).find(p => p.type === 'title');
+        if (firstProp) return firstProp.title.map(t => t.plain_text).join('').trim();
+    } catch {}
+    return '';
+}
+
+function parseNotionBlocks(blocks) {
+    const sentenceLines = [];
+    const wordLines = [];
+    let section = 'auto'; // 'sentences' | 'words' | 'auto'
+
+    const SENTENCE_KEYWORDS = /문장|sentences?|영어|english|reading/i;
+    const WORD_KEYWORDS     = /단어|words?|vocab|표현|expression/i;
+
+    for (const block of blocks) {
+        const type = block.type;
+        const text = getRichText(block[type]?.rich_text || []);
+        if (!text) continue;
+
+        // 헤딩으로 섹션 구분
+        if (type.startsWith('heading_')) {
+            if (SENTENCE_KEYWORDS.test(text)) section = 'sentences';
+            else if (WORD_KEYWORDS.test(text)) section = 'words';
+            else section = 'auto';
+            continue;
+        }
+
+        // 구분선 → 섹션 초기화
+        if (type === 'divider') { section = 'auto'; continue; }
+
+        // 섹션 또는 자동 분류
+        if (section === 'sentences') {
+            sentenceLines.push(text);
+        } else if (section === 'words') {
+            wordLines.push(text);
+        } else {
+            // 자동 분류
+            const hasKor  = /[\uAC00-\uD7AF]/.test(text);
+            const hasEng  = /[a-zA-Z]/.test(text);
+            const wCount  = text.split(/\s+/).length;
+            const isVocab = / [-–:|] /.test(text) || (hasEng && hasKor) || (hasEng && !hasKor && wCount <= 3);
+
+            if (isVocab) wordLines.push(text);
+            else sentenceLines.push(text);
         }
     }
 
-    let added = 0;
-    if (sentences.length) {
-        const f = document.getElementById('entry-sentences');
-        f.value = f.value ? f.value + '\n' + sentences.join('\n') : sentences.join('\n');
-        added += sentences.length;
-    }
-    if (words.length) {
-        const f = document.getElementById('entry-words');
-        f.value = f.value ? f.value + '\n' + words.join('\n') : words.join('\n');
-        added += words.length;
-    }
-
-    if (added) {
-        showToast(`✅ ${sentences.length}개 문장, ${words.length}개 단어 자동 입력됨`, 'success');
-    } else {
-        showToast('인식된 텍스트를 분류할 수 없습니다.', 'error');
-    }
+    return {
+        sentences: sentenceLines.join('\n'),
+        words:     wordLines.join('\n'),
+    };
 }
 
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.onload = resolve;
-        s.onerror = () => reject(new Error('스크립트 로드 실패: ' + src));
-        document.head.appendChild(s);
-    });
+function getRichText(richTextArr) {
+    return richTextArr.map(t => t.plain_text).join('').trim();
 }
 
 /* ── 사이드바 ── */
@@ -428,7 +507,7 @@ function setupModal() {
     document.getElementById('cancel-btn').onclick = closeModal;
     document.getElementById('modal-overlay').onclick = e => { if (e.target.id === 'modal-overlay') closeModal(); };
     document.getElementById('entry-form').onsubmit = handleSubmit;
-    setupOCR();
+    setupNotion();
 }
 
 function openAddModal() {
@@ -437,15 +516,9 @@ function openAddModal() {
     document.getElementById('entry-date').value = todayStr();
     document.getElementById('form-modal-title').textContent = '새 학습 추가';
     document.getElementById('save-btn').textContent = '저장하기';
-    resetOCR();
+    document.getElementById('notion-url').value = '';
+    setNotionStatus('', '');
     document.getElementById('modal-overlay').classList.add('open');
-}
-
-function resetOCR() {
-    document.getElementById('ocr-status').style.display = 'none';
-    document.getElementById('ocr-input').value = '';
-    const thumb = document.getElementById('ocr-drop').querySelector('.ocr-thumb');
-    if (thumb) thumb.remove();
 }
 
 function openEditModal(entry) {
