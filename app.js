@@ -158,6 +158,8 @@ let currentDate = null;
 let editingId = null;
 let quizEntryId = null;
 let quizState = { blank: [], vocab: [], answers: {} };
+let calendarYear = new Date().getFullYear();
+let calendarMonth = new Date().getMonth();
 
 /* ── 초기화 ── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -167,210 +169,73 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
 });
 
-/* ── Notion 연동 ── */
-const NOTION_PROXY = 'https://corsproxy.io/?';
-
-function setupNotion() {
-    // 설정 모달
-    document.getElementById('notion-setup-open').addEventListener('click', openNotionSetup);
-    document.getElementById('notion-setup-close').addEventListener('click', closeNotionSetup);
-    document.getElementById('notion-setup-cancel').addEventListener('click', closeNotionSetup);
-    document.getElementById('notion-setup-overlay').addEventListener('click', e => {
-        if (e.target.id === 'notion-setup-overlay') closeNotionSetup();
-    });
-    document.getElementById('notion-token-save').addEventListener('click', saveNotionToken);
-
-    // 가져오기 버튼
-    document.getElementById('notion-fetch-btn').addEventListener('click', handleNotionFetch);
-    document.getElementById('notion-url').addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); handleNotionFetch(); }
-    });
-
-    // 저장된 토큰 표시
-    const saved = localStorage.getItem('notion_token');
-    if (saved) document.getElementById('notion-token-input').value = saved;
+/* ── YouTube 스크립트 가져오기 ── */
+function extractYouTubeId(url) {
+    const m = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
 }
 
-function openNotionSetup() {
-    const saved = localStorage.getItem('notion_token');
-    if (saved) document.getElementById('notion-token-input').value = saved;
-    document.getElementById('notion-setup-overlay').classList.add('open');
-}
-
-function closeNotionSetup() {
-    document.getElementById('notion-setup-overlay').classList.remove('open');
-}
-
-function saveNotionToken() {
-    const token = document.getElementById('notion-token-input').value.trim();
-    if (!token) { showToast('토큰을 입력해주세요.', 'error'); return; }
-    localStorage.setItem('notion_token', token);
-    closeNotionSetup();
-    showToast('Notion API 토큰이 저장되었습니다.', 'success');
-}
-
-async function handleNotionFetch() {
-    const url   = document.getElementById('notion-url').value.trim();
-    const token = localStorage.getItem('notion_token');
-    const statusEl = document.getElementById('notion-fetch-status');
-
-    if (!url) { setNotionStatus('Notion 페이지 URL을 입력해주세요.', 'error'); return; }
-
-    if (!token) {
-        setNotionStatus('먼저 Notion API 토큰을 설정해주세요.', 'error');
-        setTimeout(openNotionSetup, 600);
-        return;
+async function fetchYouTubeTranscript(videoId) {
+    const proxyBase = 'https://corsproxy.io/?';
+    // Try English first, then auto-generated
+    const langs = ['en', 'en-US', 'a.en'];
+    for (const lang of langs) {
+        try {
+            const url = `https://www.youtube.com/api/timedtext?lang=${lang}&v=${videoId}`;
+            const res = await fetch(proxyBase + encodeURIComponent(url));
+            if (!res.ok) continue;
+            const xml = await res.text();
+            if (!xml.trim() || !xml.includes('<text')) continue;
+            const doc = new DOMParser().parseFromString(xml, 'text/xml');
+            const texts = [...doc.querySelectorAll('text')]
+                .map(t => t.textContent
+                    .replace(/&#39;/g, "'")
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .trim())
+                .filter(Boolean);
+            if (texts.length) return texts.join(' ');
+        } catch {}
     }
+    throw new Error('이 영상의 스크립트를 가져올 수 없습니다.');
+}
 
-    const pageId = extractNotionPageId(url);
-    if (!pageId) { setNotionStatus('유효한 Notion URL이 아닙니다.', 'error'); return; }
+function updateYtFetchBtn() {
+    const url = document.getElementById('entry-link').value.trim();
+    const btn = document.getElementById('yt-fetch-btn');
+    btn.style.display = extractYouTubeId(url) ? 'inline-flex' : 'none';
+}
 
-    const btn = document.getElementById('notion-fetch-btn');
+async function handleYtFetch() {
+    const url = document.getElementById('entry-link').value.trim();
+    const videoId = extractYouTubeId(url);
+    if (!videoId) return;
+
+    const transcriptEl = document.getElementById('entry-transcript');
+    const statusEl = document.getElementById('yt-fetch-status');
+    const btn = document.getElementById('yt-fetch-btn');
+
     btn.disabled = true;
-    btn.textContent = '불러오는 중...';
-    setNotionStatus('Notion 페이지 불러오는 중...', '');
+    btn.textContent = '가져오는 중...';
+    statusEl.textContent = 'YouTube 스크립트 불러오는 중...';
+    statusEl.className = '';
 
     try {
-        const { sentences, words, title } = await fetchNotionBlocks(pageId, token);
-
-        if (title && !document.getElementById('entry-title').value) {
-            document.getElementById('entry-title').value = title;
-        }
-        if (sentences) {
-            const f = document.getElementById('entry-sentences');
-            f.value = f.value ? f.value + '\n' + sentences : sentences;
-        }
-        if (words) {
-            const f = document.getElementById('entry-words');
-            f.value = f.value ? f.value + '\n' + words : words;
-        }
-
-        const sentCount = sentences.split('\n').filter(Boolean).length;
-        const wordCount = words.split('\n').filter(Boolean).length;
-        setNotionStatus(`✅ 문장 ${sentCount}줄, 단어 ${wordCount}줄 가져옴`, 'success');
-        showToast('Notion에서 내용을 가져왔습니다!', 'success');
-
+        const transcript = await fetchYouTubeTranscript(videoId);
+        transcriptEl.value = transcript;
+        statusEl.textContent = `✅ 스크립트 ${transcript.split(' ').length}단어 가져옴`;
+        statusEl.className = 'success';
+        showToast('YouTube 스크립트를 가져왔습니다!', 'success');
     } catch (err) {
-        setNotionStatus('오류: ' + err.message, 'error');
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.className = 'error';
+        showToast(err.message, 'error');
     } finally {
         btn.disabled = false;
-        btn.textContent = '가져오기';
+        btn.textContent = '스크립트 가져오기';
     }
-}
-
-function setNotionStatus(msg, type) {
-    const el = document.getElementById('notion-fetch-status');
-    el.textContent = msg;
-    el.className = type;
-}
-
-function extractNotionPageId(url) {
-    // UUID 형태 (32자 hex 또는 8-4-4-4-12 형태)
-    const uuidMatch = url.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-    if (uuidMatch) return uuidMatch[0];
-
-    const hexMatch = url.match(/([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
-    if (hexMatch) {
-        const h = hexMatch[1];
-        return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
-    }
-    return null;
-}
-
-async function fetchNotionBlocks(pageId, token) {
-    // 1. 페이지 제목 가져오기
-    const pageApiUrl = `https://api.notion.com/v1/pages/${pageId}`;
-    const pageRes = await fetch(NOTION_PROXY + encodeURIComponent(pageApiUrl), {
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Notion-Version': '2022-06-28',
-        }
-    });
-    if (!pageRes.ok) {
-        const e = await pageRes.json().catch(() => ({}));
-        throw new Error(e.message || `HTTP ${pageRes.status} — 페이지 접근 권한을 확인해주세요`);
-    }
-    const pageData = await pageRes.json();
-    const title = extractPageTitle(pageData);
-
-    // 2. 블록 목록 가져오기
-    const blocksApiUrl = `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`;
-    const blocksRes = await fetch(NOTION_PROXY + encodeURIComponent(blocksApiUrl), {
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Notion-Version': '2022-06-28',
-        }
-    });
-    if (!blocksRes.ok) throw new Error(`블록 불러오기 실패 HTTP ${blocksRes.status}`);
-    const blocksData = await blocksRes.json();
-
-    const { sentences, words } = parseNotionBlocks(blocksData.results || []);
-    return { title, sentences, words };
-}
-
-function extractPageTitle(pageData) {
-    try {
-        const props = pageData.properties;
-        for (const key of ['title', 'Title', 'Name', 'name']) {
-            if (props[key]?.title) {
-                return props[key].title.map(t => t.plain_text).join('').trim();
-            }
-        }
-        const firstProp = Object.values(props).find(p => p.type === 'title');
-        if (firstProp) return firstProp.title.map(t => t.plain_text).join('').trim();
-    } catch {}
-    return '';
-}
-
-function parseNotionBlocks(blocks) {
-    const sentenceLines = [];
-    const wordLines = [];
-    let section = 'auto'; // 'sentences' | 'words' | 'auto'
-
-    const SENTENCE_KEYWORDS = /문장|sentences?|영어|english|reading/i;
-    const WORD_KEYWORDS     = /단어|words?|vocab|표현|expression/i;
-
-    for (const block of blocks) {
-        const type = block.type;
-        const text = getRichText(block[type]?.rich_text || []);
-        if (!text) continue;
-
-        // 헤딩으로 섹션 구분
-        if (type.startsWith('heading_')) {
-            if (SENTENCE_KEYWORDS.test(text)) section = 'sentences';
-            else if (WORD_KEYWORDS.test(text)) section = 'words';
-            else section = 'auto';
-            continue;
-        }
-
-        // 구분선 → 섹션 초기화
-        if (type === 'divider') { section = 'auto'; continue; }
-
-        // 섹션 또는 자동 분류
-        if (section === 'sentences') {
-            sentenceLines.push(text);
-        } else if (section === 'words') {
-            wordLines.push(text);
-        } else {
-            // 자동 분류
-            const hasKor  = /[\uAC00-\uD7AF]/.test(text);
-            const hasEng  = /[a-zA-Z]/.test(text);
-            const wCount  = text.split(/\s+/).length;
-            const isVocab = / [-–:|] /.test(text) || (hasEng && hasKor) || (hasEng && !hasKor && wCount <= 3);
-
-            if (isVocab) wordLines.push(text);
-            else sentenceLines.push(text);
-        }
-    }
-
-    return {
-        sentences: sentenceLines.join('\n'),
-        words:     wordLines.join('\n'),
-    };
-}
-
-function getRichText(richTextArr) {
-    return richTextArr.map(t => t.plain_text).join('').trim();
 }
 
 /* ── 사이드바 ── */
@@ -386,6 +251,66 @@ function closeSidebar() {
     document.getElementById('sidebar-overlay').classList.remove('show');
 }
 
+/* ── 캘린더 ── */
+function renderCalendar() {
+    const container = document.getElementById('sidebar-calendar');
+    const datesWithEntries = new Set(DB.dates().map(d => d.date));
+
+    const year = calendarYear;
+    const month = calendarMonth;
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = todayStr();
+
+    const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    const dowLabels = ['일','월','화','수','목','금','토'];
+
+    let html = `<div class="cal-header">
+        <button class="cal-nav" id="cal-prev">‹</button>
+        <span class="cal-month-label">${year}년 ${monthNames[month]}</span>
+        <button class="cal-nav" id="cal-next">›</button>
+    </div><div class="cal-grid">`;
+
+    dowLabels.forEach(d => { html += `<div class="cal-dow">${d}</div>`; });
+    for (let i = 0; i < firstDay; i++) html += `<div class="cal-cell"></div>`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        let cls = 'cal-cell clickable';
+        if (datesWithEntries.has(ds)) cls += ' has-entry';
+        if (ds === today) cls += ' today';
+        if (ds === currentDate) cls += ' active';
+        html += `<div class="${cls}" data-date="${ds}">${d}</div>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+
+    container.querySelector('#cal-prev').addEventListener('click', e => {
+        e.stopPropagation();
+        calendarMonth--;
+        if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+        renderCalendar();
+    });
+    container.querySelector('#cal-next').addEventListener('click', e => {
+        e.stopPropagation();
+        calendarMonth++;
+        if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+        renderCalendar();
+    });
+    container.querySelectorAll('.cal-cell.clickable').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const date = cell.dataset.date;
+            if (!DB.dates().find(d => d.date === date)) {
+                showToast('해당 날짜에 학습 내역이 없습니다.', '');
+                return;
+            }
+            currentDate = date;
+            closeSidebar();
+            render();
+        });
+    });
+}
+
 /* ── 렌더링 ── */
 function render() {
     renderSidebar();
@@ -397,6 +322,8 @@ function renderSidebar() {
     const all = DB.all();
     document.getElementById('total-days').textContent = dates.length;
     document.getElementById('total-entries').textContent = all.length;
+
+    renderCalendar();
 
     const list = document.getElementById('date-list');
     list.innerHTML = '';
@@ -507,7 +434,12 @@ function setupModal() {
     document.getElementById('cancel-btn').onclick = closeModal;
     document.getElementById('modal-overlay').onclick = e => { if (e.target.id === 'modal-overlay') closeModal(); };
     document.getElementById('entry-form').onsubmit = handleSubmit;
-    setupNotion();
+
+    // YouTube fetch
+    const linkInput = document.getElementById('entry-link');
+    linkInput.addEventListener('input', updateYtFetchBtn);
+    linkInput.addEventListener('change', updateYtFetchBtn);
+    document.getElementById('yt-fetch-btn').addEventListener('click', handleYtFetch);
 }
 
 function openAddModal() {
@@ -516,8 +448,8 @@ function openAddModal() {
     document.getElementById('entry-date').value = todayStr();
     document.getElementById('form-modal-title').textContent = '새 학습 추가';
     document.getElementById('save-btn').textContent = '저장하기';
-    document.getElementById('notion-url').value = '';
-    setNotionStatus('', '');
+    document.getElementById('yt-fetch-btn').style.display = 'none';
+    document.getElementById('yt-fetch-status').textContent = '';
     document.getElementById('modal-overlay').classList.add('open');
 }
 
@@ -531,6 +463,8 @@ function openEditModal(entry) {
     document.getElementById('entry-transcript').value = entry.transcript || '';
     document.getElementById('form-modal-title').textContent = '학습 수정';
     document.getElementById('save-btn').textContent = '수정 완료';
+    document.getElementById('yt-fetch-status').textContent = '';
+    updateYtFetchBtn();
     document.getElementById('modal-overlay').classList.add('open');
 }
 
