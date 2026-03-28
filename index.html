@@ -24,6 +24,7 @@
             <div class="stat"><span id="total-days">0</span><label>학습일</label></div>
             <div class="stat"><span id="total-entries">0</span><label>총 항목</label></div>
         </div>
+        <div id="sidebar-calendar"></div>
         <div class="date-list" id="date-list"></div>
     </aside>
 
@@ -39,10 +40,6 @@
                 </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
-                <button class="btn-notion-setup" id="notion-setup-open" title="Notion API 설정">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2h12v12H2z" stroke="currentColor" stroke-width="1.5" rx="2"/><path d="M5 5l4 4M9 5l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    Notion 설정
-                </button>
                 <button class="btn-primary" id="add-btn">+ 추가</button>
             </div>
         </div>
@@ -64,28 +61,17 @@
                     <input type="date" id="entry-date" required>
                 </div>
 
-                <!-- Notion 가져오기 -->
-                <div class="form-group notion-fetch-group">
-                    <label>
-                        <svg class="notion-logo" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="14" rx="3" fill="#191919"/><path d="M4.5 4h4.2l3 4.5V12h-1.5V9L7.8 5.5H6V12H4.5V4z" fill="white"/></svg>
-                        Notion 페이지에서 가져오기
-                    </label>
-                    <div class="notion-input-row">
-                        <input type="url" id="notion-url" placeholder="https://notion.so/...">
-                        <button type="button" id="notion-fetch-btn" class="btn-fetch">가져오기</button>
-                    </div>
-                    <div id="notion-fetch-status"></div>
-                </div>
-
-                <div class="form-divider"><span>직접 입력</span></div>
-
                 <div class="form-group">
                     <label>제목 <span class="optional">선택</span></label>
                     <input type="text" id="entry-title" placeholder="뉴스 제목이나 주제">
                 </div>
                 <div class="form-group">
                     <label>링크 <span class="optional">YouTube 또는 뉴스 URL</span></label>
-                    <input type="url" id="entry-link" placeholder="https://...">
+                    <div class="link-input-row">
+                        <input type="url" id="entry-link" placeholder="https://...">
+                        <button type="button" id="yt-fetch-btn" class="btn-fetch" style="display:none">스크립트 가져오기</button>
+                    </div>
+                    <div id="yt-fetch-status"></div>
                 </div>
                 <div class="form-group">
                     <label>공부한 문장</label>
@@ -104,40 +90,6 @@
                     <button type="submit" class="btn-primary" id="save-btn">저장하기</button>
                 </div>
             </form>
-        </div>
-    </div>
-</div>
-
-<!-- Notion API 설정 Modal -->
-<div class="modal-overlay" id="notion-setup-overlay">
-    <div class="modal" style="max-width:480px">
-        <div class="modal-header">
-            <h3>Notion API 설정</h3>
-            <button class="modal-close" id="notion-setup-close">✕</button>
-        </div>
-        <div class="modal-body">
-            <div class="notion-guide">
-                <div class="notion-guide-step">
-                    <span class="step-num">1</span>
-                    <span><a href="https://www.notion.so/my-integrations" target="_blank">notion.so/my-integrations</a> 에서 새 통합 생성</span>
-                </div>
-                <div class="notion-guide-step">
-                    <span class="step-num">2</span>
-                    <span>생성된 <strong>Internal Integration Token</strong> 복사 (<code>secret_...</code>)</span>
-                </div>
-                <div class="notion-guide-step">
-                    <span class="step-num">3</span>
-                    <span>가져올 Notion 페이지 → <strong>··· → 연결 → 방금 만든 통합</strong> 선택</span>
-                </div>
-            </div>
-            <div class="form-group" style="margin-top:20px">
-                <label>Integration Token</label>
-                <input type="password" id="notion-token-input" placeholder="secret_xxxxxxxx...">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn-secondary" id="notion-setup-cancel">취소</button>
-                <button type="button" class="btn-primary" id="notion-token-save">저장</button>
-            </div>
         </div>
     </div>
 </div>
