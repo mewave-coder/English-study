@@ -167,6 +167,133 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
 });
 
+/* ── OCR ── */
+function setupOCR() {
+    const drop = document.getElementById('ocr-drop');
+    const input = document.getElementById('ocr-input');
+
+    input.addEventListener('change', () => {
+        if (input.files[0]) runOCR(input.files[0]);
+    });
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', e => {
+        e.preventDefault();
+        drop.classList.remove('drag');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) runOCR(file);
+    });
+}
+
+async function runOCR(file) {
+    const status  = document.getElementById('ocr-status');
+    const bar     = document.getElementById('ocr-bar');
+    const txt     = document.getElementById('ocr-status-text');
+    const drop    = document.getElementById('ocr-drop');
+
+    // 이미지 썸네일
+    const existing = drop.querySelector('.ocr-thumb');
+    if (existing) existing.remove();
+    const img = document.createElement('img');
+    img.className = 'ocr-thumb';
+    img.src = URL.createObjectURL(file);
+    drop.appendChild(img);
+
+    status.style.display = 'block';
+    bar.style.width = '0%';
+    txt.textContent = 'Tesseract.js 로딩 중...';
+
+    try {
+        if (!window.Tesseract) {
+            await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+        }
+
+        txt.textContent = '텍스트 인식 중...';
+
+        const worker = await Tesseract.createWorker(['eng', 'kor'], 1, {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    const pct = Math.round(m.progress * 100);
+                    bar.style.width = pct + '%';
+                    txt.textContent = `인식 중... ${pct}%`;
+                }
+            }
+        });
+
+        const { data: { text } } = await worker.recognize(file);
+        await worker.terminate();
+
+        bar.style.width = '100%';
+        txt.textContent = '완료!';
+        setTimeout(() => { status.style.display = 'none'; }, 1200);
+
+        classifyAndFill(text.trim());
+
+    } catch (err) {
+        txt.textContent = '오류: ' + err.message;
+        bar.style.width = '0%';
+    }
+}
+
+function classifyAndFill(rawText) {
+    if (!rawText) { showToast('텍스트를 인식하지 못했습니다.', 'error'); return; }
+
+    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 1);
+    const sentences = [];
+    const words = [];
+
+    const hasKorean = s => /[\uAC00-\uD7AF]/.test(s);
+    const hasEnglish = s => /[a-zA-Z]/.test(s);
+    const wordCount = s => s.split(/\s+/).length;
+
+    for (const line of lines) {
+        const kor = hasKorean(line);
+        const eng = hasEnglish(line);
+
+        if (eng && kor) {
+            // 영어+한글 혼합 → 단어-뜻 형태
+            words.push(line);
+        } else if (eng && !kor && wordCount(line) >= 4) {
+            // 영어 문장
+            sentences.push(line);
+        } else if (eng && !kor && wordCount(line) < 4) {
+            // 짧은 영어 → 단어
+            words.push(line);
+        } else if (kor) {
+            // 한글만 → 문장 번역으로 추가
+            sentences.push(line);
+        }
+    }
+
+    let added = 0;
+    if (sentences.length) {
+        const f = document.getElementById('entry-sentences');
+        f.value = f.value ? f.value + '\n' + sentences.join('\n') : sentences.join('\n');
+        added += sentences.length;
+    }
+    if (words.length) {
+        const f = document.getElementById('entry-words');
+        f.value = f.value ? f.value + '\n' + words.join('\n') : words.join('\n');
+        added += words.length;
+    }
+
+    if (added) {
+        showToast(`✅ ${sentences.length}개 문장, ${words.length}개 단어 자동 입력됨`, 'success');
+    } else {
+        showToast('인식된 텍스트를 분류할 수 없습니다.', 'error');
+    }
+}
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('스크립트 로드 실패: ' + src));
+        document.head.appendChild(s);
+    });
+}
+
 /* ── 사이드바 ── */
 function setupSidebar() {
     document.getElementById('hamburger-btn').addEventListener('click', () => {
@@ -301,6 +428,7 @@ function setupModal() {
     document.getElementById('cancel-btn').onclick = closeModal;
     document.getElementById('modal-overlay').onclick = e => { if (e.target.id === 'modal-overlay') closeModal(); };
     document.getElementById('entry-form').onsubmit = handleSubmit;
+    setupOCR();
 }
 
 function openAddModal() {
@@ -309,7 +437,15 @@ function openAddModal() {
     document.getElementById('entry-date').value = todayStr();
     document.getElementById('form-modal-title').textContent = '새 학습 추가';
     document.getElementById('save-btn').textContent = '저장하기';
+    resetOCR();
     document.getElementById('modal-overlay').classList.add('open');
+}
+
+function resetOCR() {
+    document.getElementById('ocr-status').style.display = 'none';
+    document.getElementById('ocr-input').value = '';
+    const thumb = document.getElementById('ocr-drop').querySelector('.ocr-thumb');
+    if (thumb) thumb.remove();
 }
 
 function openEditModal(entry) {
