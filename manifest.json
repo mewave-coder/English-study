@@ -1,0 +1,14 @@
+{
+  "name": "영어 공부장",
+  "short_name": "영어공부장",
+  "description": "매일 영어 뉴스 학습 기록 앱",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a2e4a",
+  "theme_color": "#1a2e4a",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

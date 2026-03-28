@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="영어공부장">
+    <title>영어 공부장</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1>📚 영어 공부장</h1>
+            <p class="subtitle">매일 꾸준히!</p>
+        </div>
+        <div class="stats">
+            <div class="stat"><span id="total-days">0</span><label>학습일</label></div>
+            <div class="stat"><span id="total-entries">0</span><label>총 항목</label></div>
+        </div>
+        <div class="date-list" id="date-list"></div>
+    </aside>
+
+    <main class="main">
+        <div class="main-header">
+            <div class="main-header-left">
+                <button class="hamburger" id="hamburger-btn">
+                    <span></span><span></span><span></span>
+                </button>
+                <div>
+                    <h2 id="current-date-title">전체 학습 내역</h2>
+                    <p id="entry-count-label"></p>
+                </div>
+            </div>
+            <button class="btn-primary" id="add-btn">+ 추가</button>
+        </div>
+        <div id="entries-container"></div>
+    </main>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="form-modal-title">새 학습 추가</h3>
+            <button class="modal-close" id="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="entry-form">
+                <div class="form-group">
+                    <label>날짜</label>
+                    <input type="date" id="entry-date" required>
+                </div>
+                <div class="form-group">
+                    <label>제목 <span class="optional">선택</span></label>
+                    <input type="text" id="entry-title" placeholder="뉴스 제목이나 주제">
+                </div>
+                <div class="form-group">
+                    <label>링크 <span class="optional">YouTube 또는 뉴스 URL</span></label>
+                    <input type="url" id="entry-link" placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label>공부한 문장</label>
+                    <textarea id="entry-sentences" rows="5" placeholder="공부한 문장을 복사해서 붙여넣기 하세요..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>단어 &amp; 표현</label>
+                    <textarea id="entry-words" rows="4" placeholder="breakthrough - 획기적인 발전&#10;unprecedented - 전례 없는&#10;..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>스크립트 <span class="optional">선택 — YouTube에서 복사해서 붙여넣기</span></label>
+                    <textarea id="entry-transcript" rows="3" placeholder="YouTube 영상 → ··· → 스크립트 표시 → 복사 붙여넣기"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancel-btn">취소</button>
+                    <button type="submit" class="btn-primary" id="save-btn">저장하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Quiz Modal -->
+<div class="modal-overlay" id="quiz-overlay">
+    <div class="modal quiz-modal">
+        <div class="modal-header">
+            <div>
+                <h3 id="quiz-modal-title">퀴즈</h3>
+                <p id="quiz-meta" style="font-size:12px;color:#94a3b8;margin-top:3px;"></p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn-secondary" id="quiz-retry-btn" style="font-size:13px;padding:7px 12px;">🔄 다시</button>
+                <button class="modal-close" id="quiz-close">✕</button>
+            </div>
+        </div>
+        <div class="modal-body" id="quiz-body"></div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+}
+</script>
+</body>
+</html>
